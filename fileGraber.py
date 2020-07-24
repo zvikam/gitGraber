@@ -29,7 +29,7 @@ def createEmptyBinaryFile(name):
 
 
 def initFile(name):
-    if not name or os.path.getsize(name) == 0:
+    if not name or not os.path.exists(name) or os.path.getsize(name) == 0:
         createEmptyBinaryFile(name)
 
 
@@ -109,10 +109,15 @@ def displayResults(result, tokenResult, filename):
 
 
 def doSearchFilesystem(args, tokenMap, tokenCombos, file):
+    try:
+        with open(file, 'r') as f:
+            content = f.read()
+    except:
+        if args.verbose:
+            print("[+] skipping binary file", file)
+        return
     if args.verbose:
-        print("[+] checking ", file)
-    with open(file, 'r') as f:
-        content = f.read()
+        print("[+] checking", file)
     tokensResult = checkToken(content, tokenMap, tokenCombos)
     for token in tokensResult.keys():
         displayMessage = displayResults(token, tokensResult, file)
@@ -124,6 +129,12 @@ def doSearchFilesystem(args, tokenMap, tokenCombos, file):
             writeToWordlist(file, args.wordlist)
 
 
+def findFiles(mask):
+    for f in glob.iglob(mask, recursive=True):
+        if os.path.isfile(f):
+            yield f
+
+
 def searchFilesystem(args):
     tokenMap, tokenCombos = tokens.initTokensMap()
 
@@ -131,19 +142,19 @@ def searchFilesystem(args):
         print("[+] scanning", args.mask)
 
     pool = Pool(int(args.max_threads))
-    pool.map(partial(doSearchFilesystem, args, tokenMap, tokenCombos), glob.iglob(args.mask, recursive=True))
+    pool.map(partial(doSearchFilesystem, args, tokenMap, tokenCombos), findFiles(args.mask))
     pool.close()
     pool.join()
 
 
 parser = argparse.ArgumentParser()
 argcomplete.autocomplete(parser)
-parser.add_argument('-t', '--threads', action='store', dest='max_threads', help='Max threads to speed the requests on Github (take care about the rate limit)', default="3")
+parser.add_argument('-t', '--threads', action='store', dest='max_threads', help='Max threads to speed the file handling', default="3")
 parser.add_argument('-m', '--mask', action='store', dest='mask', help='Specify file mask (-m "*.java")')
 parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output', default=False)
 parser.add_argument('-s', '--slack', action='store_true', help='Enable slack notifications', default=False)
 parser.add_argument('-tg', '--telegram', action='store_true', help='Enable telegram notifications', default=False)
-parser.add_argument('-w', '--wordlist', action='store', dest='wordlist', help='Create a wordlist that fills dynamically with discovered filenames on GitHub')
+parser.add_argument('-w', '--wordlist', action='store', dest='wordlist', help='Create a wordlist that fills dynamically with discovered filenames')
 args = parser.parse_args()
 
 if not args.mask or args.mask == "":
@@ -154,11 +165,11 @@ if not args.mask or args.mask == "":
 fileMask = args.mask
 path_script = os.path.dirname(os.path.realpath(__file__))
 
-# If wordlist, check if file is binary initialized for mmap 
+# If wordlist, check if file is binary initialized for mmap
 if args.wordlist:
     initFile(args.wordlist)
 
-# Init URL file 
+# Init URL file
 initFile(config.GITHUB_URL_FILE)
 
 # Search filesystem
